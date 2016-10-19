@@ -1,0 +1,63 @@
+#!/bin/sh
+
+# Solo queremos validar y formatear los ficheros Javascript incluidos en el commit
+files=$(git diff --cached --name-only --diff-filter=ACM | grep ".js$")
+
+# Si no hay ficheros Javascript se continúa normalmente el commit
+if [ "$files" = "" ]; then 
+    exit 0 
+fi
+
+# Variable que comprueba si todas las validaciones fueron correctas
+pass=true
+
+echo "Validando Javascript con JSHint:"
+
+# Recorremos todos los archivos
+for file in $files; do
+
+    excluded=false
+
+    # Recorre las líneas del fichero exclude-hook.txt ubicado en el raíz del proyecto
+    # en busca de ficheros o patrones a excluir. No interesa formatear y validar por
+    # ejemplo, librerías externas como Jasmine, que no tienen por qué seguir la misma
+    # guía de estilo de nuestro proyecto.
+    while read line || [ -n "$line" ]
+    do
+        # Coincidencia encontrada. Se excluye el fichero.
+        if [ "${file#*$line}" != "$file" ]; then
+            echo "Excluido $file"
+            excluded=true
+            break
+        fi
+
+    # '< exclude-hook.txt' es el equivalente a 'cat exclude-hook.txt'
+    done < exclude-hook.txt
+
+    if [ "$excluded" = true ]; then
+        continue
+    fi
+
+    result=$(jshint $file | egrep "error")
+    echo $result
+
+    if [ "$result" != "" ]; then
+        echo "JSHint fallido: $file"
+        echo "$(jshint $file)"
+        pass=false
+    else
+        echo "JSHint validado: $file"
+        beautify=$(js-beautify $file -r -P --config .beautifyrc)
+        add=$(git add $file)
+    fi
+done
+
+echo "Validación de Javascript completa"
+
+if ! $pass; then
+    echo "Es necesario corregir los errores mostrados por JSHint. Abortando commit."
+    exit 1
+else
+    echo "Validación y formateado satisfactorios."
+    exit 0
+fi
